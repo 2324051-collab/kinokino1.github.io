@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Catcher Game</title>
+    <style>
+        :root {
+            --bg-color: #e0f7fa;
+            --basket-color: #8d6e63;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            touch-action: none; /* 防止スワイプ等 */
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            height: 80vh;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 100%);
+            border: 4px solid #fff;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        #basket {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            width: 80px;
+            height: 50px;
+            background-color: var(--basket-color);
+            border-radius: 0 0 40px 40px;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: transform 0.1s ease-out;
+            z-index: 10;
+        }
+
+        #basket::before {
+            content: "";
+            position: absolute;
+            top: -5px;
+            width: 90px;
+            height: 10px;
+            background-color: #6d4c41;
+            border-radius: 5px;
+        }
+
+        .fruit {
+            position: absolute;
+            font-size: 35px;
+            user-select: none;
+            z-index: 5;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        }
+
+        #game-over h2 { margin-top: 0; color: #ff5252; }
+        
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            font-size: 18px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+
+        button:hover { background: #45a049; }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui-layer">
+        <div class="stat-box">スコア: <span id="score">0</span></div>
+        <div class="stat-box">ライフ: <span id="lives">3</span></div>
+    </div>
+
+    <div id="basket">🧺</div>
+
+    <div id="game-over">
+        <h2>ゲームオーバー</h2>
+        <p>最終スコア: <span id="final-score">0</span></p>
+        <button onclick="resetGame()">もう一度プレイ</button>
+    </div>
+</div>
+
+<div class="controls-hint">矢印キー ↔ または 画面タップでカゴを移動</div>
+
+<script>
+    const container = document.getElementById('game-container');
+    const basket = document.getElementById('basket');
+    const scoreElement = document.getElementById('score');
+    const livesElement = document.getElementById('lives');
+    const gameOverScreen = document.getElementById('game-over');
+    const finalScoreElement = document.getElementById('final-score');
+
+    const fruits = ['🍎', '🍊', '🍌', '🍇', '🍓', '🍑', '🍍', '🍉'];
+    
+    let score = 0;
+    let lives = 3;
+    let basketX = 50; // パーセント
+    let isGameOver = false;
+    let gameSpeed = 3;
+    let spawnRate = 1500;
+    let gameLoop;
+    let spawnTimer;
+
+    // カゴの移動（マウス・タッチ）
+    function moveBasket(e) {
+        if (isGameOver) return;
+        let clientX;
+        if (e.type === 'touchmove' || e.type === 'touchstart') {
+            clientX = e.touches[0].clientX;
+        } else {
+            clientX = e.clientX;
+        }
+
+        const rect = container.getBoundingClientRect();
+        let x = ((clientX - rect.left) / rect.width) * 100;
+        
+        // 範囲制限
+        if (x < 5) x = 5;
+        if (x > 95) x = 95;
+        
+        basketX = x;
+        basket.style.left = basketX + '%';
+    }
+
+    container.addEventListener('mousemove', moveBasket);
+    container.addEventListener('touchstart', moveBasket);
+    container.addEventListener('touchmove', moveBasket);
+
+    // キーボード操作
+    window.addEventListener('keydown', (e) => {
+        if (isGameOver) return;
+        if (e.key === 'ArrowLeft') {
+            basketX = Math.max(5, basketX - 5);
+        } else if (e.key === 'ArrowRight') {
+            basketX = Math.min(95, basketX + 5);
+        }
+        basket.style.left = basketX + '%';
+    });
+
+    function createFruit() {
+        if (isGameOver) return;
+
+        const fruit = document.createElement('div');
+        fruit.className = 'fruit';
+        fruit.innerText = fruits[Math.floor(Math.random() * fruits.length)];
+        
+        const startX = Math.random() * 90 + 5;
+        fruit.style.left = startX + '%';
+        fruit.style.top = '-50px';
+        
+        container.appendChild(fruit);
+
+        let posY = -50;
+        
+        function fall() {
+            if (isGameOver) {
+                fruit.remove();
+                return;
+            }
+
+            posY += gameSpeed;
+            fruit.style.top = posY + 'px';
+
+            const containerHeight = container.offsetHeight;
+            const basketRect = basket.getBoundingClientRect();
+            const fruitRect = fruit.getBoundingClientRect();
+
+            // 当たり判定
+            if (
+                fruitRect.bottom >= basketRect.top &&
+                fruitRect.top <= basketRect.bottom &&
+                fruitRect.right >= basketRect.left &&
+                fruitRect.left <= basketRect.right
+            ) {
+                score += 10;
+                scoreElement.innerText = score;
+                fruit.remove();
+                
+                // スピードアップ
+                if (score % 100 === 0) {
+                    gameSpeed += 0.5;
+                    updateSpawnRate();
+                }
+                return;
+            }
+
+            // 画面外（見逃し）
+            if (posY > containerHeight) {
+                lives--;
+                livesElement.innerText = lives;
+                fruit.remove();
+                
+                if (lives <= 0) {
+                    endGame();
+                }
+                return;
+            }
+
+            requestAnimationFrame(fall);
+        }
+
+        requestAnimationFrame(fall);
+    }
+
+    function updateSpawnRate() {
+        clearInterval(spawnTimer);
+        const newRate = Math.max(500, 1500 - (score * 2));
+        spawnTimer = setInterval(createFruit, newRate);
+    }
+
+    function endGame() {
+        isGameOver = true;
+        gameOverScreen.style.display = 'block';
+        finalScoreElement.innerText = score;
+        clearInterval(spawnTimer);
+    }
+
+    function resetGame() {
+        // 初期化
+        score = 0;
+        lives = 3;
+        gameSpeed = 3;
+        isGameOver = false;
+        
+        scoreElement.innerText = score;
+        livesElement.innerText = lives;
+        gameOverScreen.style.display = 'none';
+        
+        // 既存のフルーツを削除
+        document.querySelectorAll('.fruit').forEach(f => f.remove());
+        
+        // 再開
+        updateSpawnRate();
+    }
+
+    // 初回開始
+    window.onload = () => {
+        updateSpawnRate();
+    };
+</script>
+
+</body>
+</html>
